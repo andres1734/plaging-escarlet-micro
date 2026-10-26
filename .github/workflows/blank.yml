@@ -13,16 +13,24 @@ jobs:
       - name: Clonar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar CMake (Desactivar copia al sistema)
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_COPY_PLUGIN_AFTER_BUILD=OFF
+      - name: Configurar CMake
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DJUCE_COPY_PLUGIN_AFTER_BUILD=OFF `
+            -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/install"
 
-      - name: Compilar VST3
-        run: cmake --build build --config Release --target ScarlettWarmth_VST3
+      - name: Compilar proyecto
+        run: cmake --build build --config Release
 
       - name: Preparar archivo ZIP para FL Studio
         shell: pwsh
         run: |
-          $vstPath = "build/ScarlettWarmth_artefacts/Release/VST3/Scarlett Warmth Preamp.vst3"
+          $vstPath = Get-ChildItem -Path "build" -Recurse -Filter "*.vst3" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $vstPath) {
+              throw "No se encontró el archivo .vst3 compilado."
+          }
+          Write-Host "Encontrado VST3 en: $vstPath"
           Compress-Archive -Path $vstPath -DestinationPath "ScarlettWarmth_VST3_ListoParaFLStudio.zip"
 
       - name: Subir Artifact (Plugin listo)
