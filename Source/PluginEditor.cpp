@@ -2,32 +2,30 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor (AudioPluginAudioProcessor& p)
+ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (ScarlettWarmthAudioProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
-    juce::ignoreUnused (processorRef);
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
     setSize (400, 300);
 }
 
-AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
+ScarlettWarmthAudioProcessorEditor::~ScarlettWarmthAudioProcessorEditor()
 {
 }
 
 //==============================================================================
-void AudioPluginAudioProcessorEditor::paint (juce::Graphics& g)
+void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
 {
     // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 
     g.setColour (juce::Colours::white);
     g.setFont (15.0f);
-    g.drawFittedText ("Hello World!", getLocalBounds(), juce::Justification::centred, 1);
+    g.drawFittedText ("Hello World!", getLocalBounds(), juce::Justification::center, 1);
 }
 
-void AudioPluginAudioProcessorEditor::resized()
+void ScarlettWarmthAudioProcessorEditor::resized()
 {
-    // This is generally where you'll want to lay out the positions of any
-    // subcomponents in your editor..
+    // This is generally where you'll use all your child components to position their sizes.
 }
