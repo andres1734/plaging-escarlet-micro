@@ -32,7 +32,7 @@ juce_add_plugin(ScarlettWarmth
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD FALSE  # <-- Desactivado para evitar errores de permisos en CI
     PLUGIN_MANUFACTURER_CODE AnVo
     PLUGIN_CODE ScWm
     FORMATS VST3 Standalone
@@ -43,6 +43,8 @@ target_sources(ScarlettWarmth
     PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
+        Source/PluginEditor.cpp
+        Source/PluginEditor.h
 )
 
 target_compile_definitions(ScarlettWarmth
@@ -61,15 +63,3 @@ target_link_libraries(ScarlettWarmth
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
-
-# Automatic copy to Windows FL Studio VST3 Common Files Directory
-if(WIN32)
-    set(COMMON_VST3_DIR "$ENV{COMMONPROGRAMFILES}/VST3")
-    add_custom_command(TARGET ScarlettWarmth_VST3 POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${COMMON_VST3_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "$<TARGET_FILE_DIR:ScarlettWarmth_VST3>/Scarlett Warmth Preamp.vst3"
-            "${COMMON_VST3_DIR}/Scarlett Warmth Preamp.vst3"
-        COMMENT "Copiando Scarlett Warmth Preamp.vst3 directamente a la carpeta de FL Studio: ${COMMON_VST3_DIR}"
-    )
-endif()
