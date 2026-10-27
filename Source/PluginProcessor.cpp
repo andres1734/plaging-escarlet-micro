@@ -75,8 +75,8 @@ void ScarlettWarmthAudioProcessor::prepareToPlay (double sampleRate, int samples
     currentSampleRate = sampleRate;
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = (uint32) samplesPerBlock;
-    spec.numChannels = (uint32) getTotalNumOutputChannels();
+    spec.maximumBlockSize = (uint32_t) samplesPerBlock;
+    spec.numChannels = (uint32_t) getTotalNumOutputChannels();
 
     for (int i = 0; i < 2; ++i)
     {
@@ -146,18 +146,18 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     float hpfFreqs[] = { 10.0f, 40.0f, 80.0f, 120.0f, 160.0f, 200.0f };
     float currentHpfFreq = hpfFreqs[std::clamp(hpfChoice, 0, 5)];
 
-    // Generar coeficientes una sola vez por bloque (eficiente y limpio)
+    // Generar coeficientes para el bloque actual
     auto hpfCoeffs   = juce::dsp::IIR::Coefficients<float>::makeHighPass  (currentSampleRate, currentHpfFreq);
     auto notchCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain (deHarsh));
     auto warmthCoeffs= juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate,  220.0f, 2.5f, juce::Decibels::decibelsToGain (chest));
     auto silkCoeffs  = juce::dsp::IIR::Coefficients<float>::makeHighShelf (currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain (silk));
 
-    // Asignar coeficientes directamente a ambos canales
+    // Actualizar coeficientes en ambos canales
     for (int i = 0; i < 2; ++i)
     {
         if (currentHpfFreq > 15.0f)
             hpfFilter[i].coefficients = hpfCoeffs;
-            
+
         cm25Notch[i].coefficients   = notchCoeffs;
         warmthShelf[i].coefficients = warmthCoeffs;
         silkShelf[i].coefficients   = silkCoeffs;
@@ -165,7 +165,7 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
 
     float peak = 0.0f;
 
-    // Procesamiento muestra por muestra
+    // Procesamiento muestra por muestra por canal
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
