@@ -77,13 +77,10 @@ void ScarlettWarmthAudioProcessor::prepareToPlay (double sampleRate, int samples
     spec.maximumBlockSize = (uint32) samplesPerBlock;
     spec.numChannels = (uint32) getTotalNumOutputChannels();
 
-    for (int i = 0; i < 2; ++i)
-    {
-        hpfFilter[i].prepare(spec);
-        cm25Notch[i].prepare(spec);
-        warmthShelf[i].prepare(spec);
-        silkShelf[i].prepare(spec);
-    }
+    hpfFilter.prepare(spec);
+    cm25Notch.prepare(spec);
+    warmthShelf.prepare(spec);
+    silkShelf.prepare(spec);
 }
 
 void ScarlettWarmthAudioProcessor::releaseResources() {}
@@ -125,11 +122,6 @@ float ScarlettWarmthAudioProcessor::applyTriodeSaturation (float inSample, float
 void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
 
     // Leer parámetros del APVTS
     bool bypass      = apvts.getRawParameterValue("bypass")->load() > 0.5f;
@@ -145,65 +137,46 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     float hpfFreqs[] = { 10.0f, 40.0f, 80.0f, 120.0f, 160.0f, 200.0f };
     float currentHpfFreq = hpfFreqs[std::clamp(hpfChoice, 0, 5)];
 
-    // Actualizar coeficientes de filtros de forma moderna
+    // Actualizar coeficientes de los filtros
     if (currentHpfFreq > 15.0f) {
-        for (int i = 0; i < getTotalNumOutputChannels(); ++i) {
-            auto hpfCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
-            *hpfFilter[i].state = *hpfCoeffs;
-        }
+        *hpfFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
     }
+    
+    *cm25Notch.state   = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain(deHarsh));
+    *warmthShelf.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 220.0f, 2.5f, juce::Decibels::decibelsToGain(chest));
+    *silkShelf.state   = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
 
-    for (int i = 0; i < getTotalNumOutputChannels(); ++i)
+    if (!bypass)
     {
-        // CM25 De-Harsh Notch (5.8 kHz)
-        auto notchCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain(deHarsh));
-        *cm25Notch[i].state = *notchCoeffs;
+        // Procesar todo el bloque estéreo de una sola vez con el motor DSP de JUCE
+        juce::dsp::AudioBlock<float> block (buffer);
+        
+        if (currentHpfFreq > 15.0f)
+            hpfFilter.process(juce::dsp::ProcessContextReplacing<float>(block));
 
-        // Chest Warmth Peak (220 Hz)
-        auto warmthCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 220.0f, 2.5f, juce::Decibels::decibelsToGain(chest));
-        *warmthShelf[i].state = *warmthCoeffs;
-
-        // Silk Air High Shelf (12.5 kHz)
-        auto silkCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
-        *silkShelf[i].state = *silkCoeffs;
+        cm25Notch.process(juce::dsp::ProcessContextReplacing<float>(block));
+        warmthShelf.process(juce::dsp::ProcessContextReplacing<float>(block));
+        silkShelf.process(juce::dsp::ProcessContextReplacing<float>(block));
     }
 
+    // Aplicar saturación y trim muestra por muestra + medición de salida
     float peak = 0.0f;
-
-    // Procesamiento de audio muestra por muestra
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
 
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
             float x = channelData[sample];
-            float processed = x;
 
             if (!bypass)
             {
-                // 1. HPF
-                if (currentHpfFreq > 15.0f)
-                    processed = hpfFilter[channel].processSample(processed);
-
-                // 2. CM25 De-Harsh Notch
-                processed = cm25Notch[channel].processSample(processed);
-
-                // 3. Chest Warmth
-                processed = warmthShelf[channel].processSample(processed);
-
-                // 4. Silk Air
-                processed = silkShelf[channel].processSample(processed);
-
-                // 5. Triode & Transformer Saturation
-                processed = applyTriodeSaturation(processed, drive, iron);
-
-                // 6. Output Trim
-                processed *= outTrim;
+                x = applyTriodeSaturation(x, drive, iron);
+                x *= outTrim;
             }
 
-            channelData[sample] = processed;
-            peak = juce::jmax(peak, std::abs(processed));
+            channelData[sample] = x;
+            peak = juce::jmax(peak, std::abs(x));
         }
     }
 
