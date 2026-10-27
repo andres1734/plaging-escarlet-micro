@@ -116,6 +116,10 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
+     float peak = 0.0f;
+     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+         peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
+     outputLevel.store (juce::jmap (juce::Decibels::gainToDecibels (peak, -60.0f), -60.0f, 0.0f, 0.0f, 1.0f));
 }
 
 //==============================================================================
