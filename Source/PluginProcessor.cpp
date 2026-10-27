@@ -77,10 +77,13 @@ void ScarlettWarmthAudioProcessor::prepareToPlay (double sampleRate, int samples
     spec.maximumBlockSize = (uint32) samplesPerBlock;
     spec.numChannels = (uint32) getTotalNumOutputChannels();
 
-    hpfFilter.prepare(spec);
-    cm25Notch.prepare(spec);
-    warmthShelf.prepare(spec);
-    silkShelf.prepare(spec);
+    for (int i = 0; i < 2; ++i)
+    {
+        hpfFilter[i].prepare(spec);
+        cm25Notch[i].prepare(spec);
+        warmthShelf[i].prepare(spec);
+        silkShelf[i].prepare(spec);
+    }
 }
 
 void ScarlettWarmthAudioProcessor::releaseResources() {}
@@ -142,17 +145,26 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     float hpfFreqs[] = { 10.0f, 40.0f, 80.0f, 120.0f, 160.0f, 200.0f };
     float currentHpfFreq = hpfFreqs[std::clamp(hpfChoice, 0, 5)];
 
-    // Actualizar coeficientes de los filtros de forma 100% explícita
-    if (currentHpfFreq > 15.0f) {
-        *hpfFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass (currentSampleRate, currentHpfFreq);
+    // Generar coeficientes una sola vez por bloque (eficiente y limpio)
+    auto hpfCoeffs   = juce::dsp::IIR::Coefficients<float>::makeHighPass  (currentSampleRate, currentHpfFreq);
+    auto notchCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain (deHarsh));
+    auto warmthCoeffs= juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate,  220.0f, 2.5f, juce::Decibels::decibelsToGain (chest));
+    auto silkCoeffs  = juce::dsp::IIR::Coefficients<float>::makeHighShelf (currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain (silk));
+
+    // Asignar coeficientes directamente a ambos canales
+    for (int i = 0; i < 2; ++i)
+    {
+        if (currentHpfFreq > 15.0f)
+            hpfFilter[i].coefficients = hpfCoeffs;
+            
+        cm25Notch[i].coefficients   = notchCoeffs;
+        warmthShelf[i].coefficients = warmthCoeffs;
+        silkShelf[i].coefficients   = silkCoeffs;
     }
-    
-    *cm25Notch.state   = *juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain (deHarsh));
-    *warmthShelf.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate,  220.0f, 2.5f, juce::Decibels::decibelsToGain (chest));
-    *silkShelf.state   = *juce::dsp::IIR::Coefficients<float>::makeHighShelf (currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain (silk));
+
     float peak = 0.0f;
 
-    // Procesamiento muestra por muestra (robusto y sin problemas de AudioBlock)
+    // Procesamiento muestra por muestra
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
@@ -165,31 +177,31 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
             {
                 // 1. HPF
                 if (currentHpfFreq > 15.0f)
-                    x = hpfFilter.processSample(x, channel);
+                    x = hpfFilter[channel].processSample (x);
 
                 // 2. CM25 De-Harsh Notch
-                x = cm25Notch.processSample(x, channel);
+                x = cm25Notch[channel].processSample (x);
 
                 // 3. Chest Warmth
-                x = warmthShelf.processSample(x, channel);
+                x = warmthShelf[channel].processSample (x);
 
                 // 4. Silk Air
-                x = silkShelf.processSample(x, channel);
+                x = silkShelf[channel].processSample (x);
 
                 // 5. Triode & Transformer Saturation
-                x = applyTriodeSaturation(x, drive, iron);
+                x = applyTriodeSaturation (x, drive, iron);
 
                 // 6. Output Trim
                 x *= outTrim;
             }
 
             channelData[sample] = x;
-            peak = juce::jmax(peak, std::abs(x));
+            peak = juce::jmax (peak, std::abs (x));
         }
     }
 
     // Actualizar medidor de salida
-    outputLevel.store(juce::jmap(juce::Decibels::gainToDecibels(peak, -60.0f), -60.0f, 0.0f, 0.0f, 1.0f));
+    outputLevel.store (juce::jmap (juce::Decibels::gainToDecibels (peak, -60.0f), -60.0f, 0.0f, 0.0f, 1.0f));
 }
 
 bool ScarlettWarmthAudioProcessor::hasEditor() const { return true; }
