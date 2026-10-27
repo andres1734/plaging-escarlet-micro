@@ -1,3 +1,4 @@
+#include <juce_dsp/juce_dsp.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
