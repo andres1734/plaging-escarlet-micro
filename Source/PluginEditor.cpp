@@ -2,245 +2,198 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-// LookAndFeel avanzado para perillas boutique (Con surco completo, relieve 3D y brillo)
-class BoutiqueKnobLookAndFeel : public juce::LookAndFeel_V4
+// IDs de parametros: cambialos si los tuyos son distintos
+namespace ID
 {
-public:
-    void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                           float sliderPosProportional, float rotaryStartAngle,
-                           float rotaryEndAngle, juce::Slider& slider) override
-    {
-        auto bounds = juce::Rectangle<float> (x, y, width, height).reduced (4.0f);
-        auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f;
-        auto center = bounds.getCentre();
-        auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+    constexpr const char* drive    = "drive";
+    constexpr const char* iron     = "iron";
+    constexpr const char* hpf      = "hpf";
+    constexpr const char* chest    = "chest";
+    constexpr const char* anti     = "antiStridence";
+    constexpr const char* silk     = "silkAir";
+    constexpr const char* topology = "topology";
+    constexpr const char* trim     = "outputTrim";
+    constexpr const char* bypass   = "bypass";
+}
 
-        // 1. Surco / Pista de fondo completa
-        juce::Path backgroundTrack;
-        backgroundTrack.addCentredArc (center.x, center.y, radius - 2.0f, radius - 2.0f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour (juce::Colour::fromRGB (28, 28, 28));
-        g.strokePath (backgroundTrack, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+static const juce::Colour kOrange = juce::Colour::fromRGB (255, 140, 0);
 
-        // 2. Arco de valor activo iluminado en naranja cálido
-        if (sliderPosProportional > 0.001f)
-        {
-            juce::Path valueArc;
-            valueArc.addCentredArc (center.x, center.y, radius - 2.0f, radius - 2.0f, 0.0f, rotaryStartAngle, angle, true);
-            g.setColour (juce::Colour::fromRGB (255, 140, 0));
-            g.strokePath (valueArc, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        }
-
-        // 3. Cuerpo circular con volumen 3D
-        auto knobRadius = radius - 8.0f;
-        
-        juce::ColourGradient knobGrad (juce::Colour::fromRGB (35, 35, 35), center.x, center.y - knobRadius,
-                                       juce::Colour::fromRGB (15, 15, 15), center.x, center.y + knobRadius, true);
-        g.setGradientFill (knobGrad);
-        g.fillEllipse (center.x - knobRadius, center.y - knobRadius, knobRadius * 2.0f, knobRadius * 2.0f);
-
-        g.setColour (juce::Colour::fromRGB (70, 70, 70));
-        g.drawEllipse (center.x - knobRadius, center.y - knobRadius, knobRadius * 2.0f, knobRadius * 2.0f, 1.2f);
-
-        // 4. Indicador físico
-        juce::Path pointer;
-        auto pointerLength = knobRadius * 0.7f;
-        auto pointerThickness = 2.5f;
-        pointer.addRectangle (-pointerThickness * 0.5f, -knobRadius + 3.0f, pointerThickness, pointerLength);
-        pointer.applyTransform (juce::AffineTransform::rotation (angle).translated (center.x, center.y));
-
-        g.setColour (juce::Colour::fromRGB (255, 175, 50));
-        g.fillPath (pointer);
-    }
-};
-
-// LookAndFeel corregido para el botón Bypass estilo Footswitch LED iluminado
-class FootswitchLEDLookAndFeel : public juce::LookAndFeel_V4
-{
-public:
-    void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&, bool, bool) override
-    {
-        auto bounds = button.getLocalBounds().toFloat().reduced (2.0f);
-        auto isToggled = button.getToggleState();
-
-        g.setColour (juce::Colour::fromRGB (22, 22, 22));
-        g.fillRoundedRectangle (bounds, 6.0f);
-
-        g.setColour (isToggled ? juce::Colour::fromRGB (255, 120, 0) : juce::Colour::fromRGB (60, 60, 60));
-        g.drawRoundedRectangle (bounds, 6.0f, 1.5f);
-
-        auto ledBounds = juce::Rectangle<float> (bounds.getX() + 12.0f, bounds.getCentreY() - 5.0f, 10.0f, 10.0f);
-        g.setColour (isToggled ? juce::Colour::fromRGB (255, 80, 0) : juce::Colour::fromRGB (45, 45, 45));
-        g.fillEllipse (ledBounds);
-
-        g.setColour (isToggled ? juce::Colour::fromRGB (255, 200, 100) : juce::Colour::fromRGB (70, 70, 70));
-        g.drawEllipse (ledBounds, 1.0f);
-    }
-};
-
-static BoutiqueKnobLookAndFeel boutiqueKnobLF;
-static FootswitchLEDLookAndFeel footswitchLEDLF;
+// Texto con tildes: siempre se lee como UTF-8 (arregla "ÃÓN")
+static juce::String U (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
 //==============================================================================
 ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (ScarlettWarmthAudioProcessor& p)
-    : AudioProcessorEditor (&p), processorRef (p)
+    : juce::AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (840, 510);
+    setupKnob (drive, ID::drive, "DRIVE / GAIN",    " dB");
+    setupKnob (iron,  ID::iron,  "IRON CORE",       " %");
+    setupKnob (chest, ID::chest, "CHEST (220Hz)",   " dB");
+    setupKnob (anti,  ID::anti,  "ANTI-STRIDENCE",  " dB");
+    setupKnob (silk,  ID::silk,  "SILK AIR",        " dB");
+    setupKnob (trim,  ID::trim,  "OUTPUT TRIM",     " dB");
 
-    auto setupRotarySlider = [this](juce::Slider& slider, juce::Label& label, const juce::String& text, const juce::String& suffix)
-    {
-        slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 65, 18);
-        slider.setNumDecimalPlacesToDisplay (1);
-        slider.setTextValueSuffix (suffix);
-        
-        slider.setLookAndFeel (&boutiqueKnobLF);
+    setupSmallLabel (hpfLabel,      U ("FILTRO DE GRAVES (HPF)"));
+    setupSmallLabel (topologyLabel, U ("TOPOLOGÍA DE PREVIO"));
 
-        slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour::fromRGB (255, 170, 50));
-        slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        addAndMakeVisible (slider);
+    setupCombo (hpfBox,      hpfAttach,      ID::hpf);
+    setupCombo (topologyBox, topologyAttach, ID::topology);
 
-        label.setText (text, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        label.setFont (juce::Font(10.0f, juce::Font::bold));
-        label.setColour (juce::Label::textColourId, juce::Colour::fromRGB (200, 200, 200));
-        addAndMakeVisible (label);
-    };
-
-    setupRotarySlider (driveSlider, driveLabel, "DRIVE / GAIN", " dB");
-    setupRotarySlider (ironSlider, ironLabel, "IRON CORE", " %");
-    setupRotarySlider (chestSlider, chestLabel, "CHEST (220Hz)", " dB");
-    setupRotarySlider (stridenceSlider, stridenceLabel, "ANTI-STRIDENCE", " dB");
-    setupRotarySlider (silkSlider, silkLabel, "SILK AIR", " dB");
-    setupRotarySlider (outputSlider, outputLabel, "OUTPUT TRIM", " dB");
-
-    hpfLabel.setText ("FILTRO DE GRAVES (HPF)", juce::dontSendNotification);
-    hpfLabel.setFont (juce::Font (10.0f, juce::Font::bold));
-    hpfLabel.setColour (juce::Label::textColourId, juce::Colour::fromRGB (200, 200, 200));
-    addAndMakeVisible (hpfLabel);
-
-    topologyLabel.setText ("TOPOLOGÍA DE PREVIO", juce::dontSendNotification);
-    topologyLabel.setFont (juce::Font (10.0f, juce::Font::bold));
-    topologyLabel.setColour (juce::Label::textColourId, juce::Colour::fromRGB (200, 200, 200));
-    addAndMakeVisible (topologyLabel);
-
-    hpfBox.addItem ("Flat", 1);
-    hpfBox.addItem ("40 Hz", 2);
-    hpfBox.addItem ("80 Hz", 3);
-    hpfBox.addItem ("120 Hz", 4);
-    hpfBox.setSelectedItemIndex (2);
-    hpfBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour::fromRGB (14, 14, 14));
-    hpfBox.setColour (juce::ComboBox::outlineColourId, juce::Colour::fromRGB (50, 50, 50));
-    hpfBox.setColour (juce::ComboBox::arrowColourId, juce::Colour::fromRGB (255, 140, 0));
-    addAndMakeVisible (hpfBox);
-
-    topologyBox.addItem ("German Valve V72", 1);
-    topologyBox.addItem ("Tube 610", 2);
-    topologyBox.addItem ("British 1073", 3);
-    topologyBox.addItem ("Tape Saturation", 4);
-    topologyBox.setSelectedItemIndex (0);
-    topologyBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour::fromRGB (14, 14, 14));
-    topologyBox.setColour (juce::ComboBox::outlineColourId, juce::Colour::fromRGB (50, 50, 50));
-    topologyBox.setColour (juce::ComboBox::arrowColourId, juce::Colour::fromRGB (255, 140, 0));
-    addAndMakeVisible (topologyBox);
-
-    bypassButton.setButtonText ("    BYPASS");
-    bypassButton.setLookAndFeel (&footswitchLEDLF);
-    bypassButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+    bypassButton.setLookAndFeel (&switchLnF);
     addAndMakeVisible (bypassButton);
+    if (audioProcessor.apvts.getParameter (ID::bypass) != nullptr)
+        bypassAttach = std::make_unique<APVTS::ButtonAttachment> (audioProcessor.apvts, ID::bypass, bypassButton);
+
+    addAndMakeVisible (meter);
+
+    setSize (840, 510);
 }
 
 ScarlettWarmthAudioProcessorEditor::~ScarlettWarmthAudioProcessorEditor()
 {
-    driveSlider.setLookAndFeel (nullptr);
-    ironSlider.setLookAndFeel (nullptr);
-    chestSlider.setLookAndFeel (nullptr);
-    stridenceSlider.setLookAndFeel (nullptr);
-    silkSlider.setLookAndFeel (nullptr);
-    outputSlider.setLookAndFeel (nullptr);
+    for (auto* s : { &drive.slider, &iron.slider, &chest.slider, &anti.slider, &silk.slider, &trim.slider })
+        s->setLookAndFeel (nullptr);
+
+    hpfBox.setLookAndFeel (nullptr);
+    topologyBox.setLookAndFeel (nullptr);
     bypassButton.setLookAndFeel (nullptr);
 }
 
+//==============================================================================
+void ScarlettWarmthAudioProcessorEditor::setupKnob (Knob& k, const char* paramID,
+                                                    const juce::String& title, const juce::String& unit)
+{
+    k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    k.slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.2f,
+                                  juce::MathConstants<float>::pi * 2.8f, true);
+    k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 90, 18);
+    k.slider.setLookAndFeel (&knobLnF);
+    k.slider.setColour (juce::Slider::textBoxTextColourId,       juce::Colour::fromRGB (255, 150, 20));
+    k.slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    k.slider.setColour (juce::Slider::textBoxOutlineColourId,    juce::Colours::transparentBlack);
+    addAndMakeVisible (k.slider);
+
+    if (audioProcessor.apvts.getParameter (paramID) != nullptr)
+    {
+        k.attach = std::make_unique<APVTS::SliderAttachment> (audioProcessor.apvts, paramID, k.slider);
+
+        // Si el texto del parametro no trae unidad, se la agrega
+        auto base = k.slider.textFromValueFunction;
+        k.slider.textFromValueFunction = [base, unit] (double v)
+        {
+            auto t = base ? base (v) : juce::String (v, 1);
+            return t.endsWithIgnoreCase (unit.trim()) ? t : t + unit;
+        };
+        k.slider.updateText();
+    }
+
+    k.name.setText (title, juce::dontSendNotification);
+    k.name.setFont (juce::Font (10.0f, juce::Font::bold));
+    k.name.setColour (juce::Label::textColourId, juce::Colour::fromRGB (150, 150, 150));
+    k.name.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (k.name);
+}
+
+void ScarlettWarmthAudioProcessorEditor::setupCombo (juce::ComboBox& box,
+                                                     std::unique_ptr<APVTS::ComboBoxAttachment>& attach,
+                                                     const char* paramID)
+{
+    auto* param = audioProcessor.apvts.getParameter (paramID);
+
+    // Toma los items directamente del parametro (no hay que adivinar la lista)
+    if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
+        box.addItemList (choice->choices, 1);
+
+    box.setLookAndFeel (&comboLnF);
+    addAndMakeVisible (box);
+
+    if (param != nullptr)
+        attach = std::make_unique<APVTS::ComboBoxAttachment> (audioProcessor.apvts, paramID, box);
+}
+
+void ScarlettWarmthAudioProcessorEditor::setupSmallLabel (juce::Label& l, const juce::String& text)
+{
+    l.setText (text, juce::dontSendNotification);
+    l.setFont (juce::Font (10.0f, juce::Font::bold));
+    l.setColour (juce::Label::textColourId, juce::Colour::fromRGB (150, 150, 150));
+    l.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (l);
+}
+
+//==============================================================================
 void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour::fromRGB (16, 16, 16));
 
-    g.setColour (juce::Colour::fromRGB (25, 25, 25));
-    g.drawRect (getLocalBounds(), 2);
+    // Encabezado
+    juce::Rectangle<float> header (15.0f, 15.0f, 810.0f, 45.0f);
+    juce::ColourGradient hg (juce::Colour::fromRGB (30, 30, 30), header.getX(), header.getY(),
+                             juce::Colour::fromRGB (18, 18, 18), header.getX(), header.getBottom(), false);
+    g.setGradientFill (hg);
+    g.fillRoundedRectangle (header, 6.0f);
+    g.setColour (kOrange);
+    g.fillRoundedRectangle (header.getX(), header.getY(), header.getWidth(), 3.0f, 1.5f);
 
-    g.setColour (juce::Colour::fromRGB (20, 20, 20));
-    g.fillRoundedRectangle (15.0f, 15.0f, 810.0f, 45.0f, 6.0f);
-    g.setColour (juce::Colour::fromRGB (45, 45, 45));
-    g.drawRoundedRectangle (15.0f, 15.0f, 810.0f, 45.0f, 6.0f, 1.0f);
-
-    g.setColour (juce::Colour::fromRGB (255, 140, 0));
-    g.fillRect (15.0f, 15.0f, 810.0f, 3.0f);
-
-    g.setColour (juce::Colour::fromRGB (255, 170, 50));
+    g.setColour (juce::Colour::fromRGB (255, 165, 30));
     g.setFont (juce::Font (13.0f, juce::Font::bold));
-    g.drawText ("FOCUSRITE CM25 MKIII  |  WARMTH PREAMP ANALOG STAGE", 30, 26, 500, 20, juce::Justification::left);
+    g.drawText ("FOCUSRITE CM25 MKIII  |  WARMTH PREAMP ANALOG STAGE",
+                header.withTrimmedLeft (16.0f).withTrimmedTop (3.0f), juce::Justification::centredLeft);
 
-    auto drawPanel = [&](juce::Rectangle<float> bounds, const juce::String& title)
+    // Paneles con degradado, brillo superior y linea que se desvanece
+    auto drawPanel = [&] (juce::Rectangle<float> b, const juce::String& title)
     {
-        g.setColour (juce::Colour::fromRGB (22, 22, 22));
-        g.fillRoundedRectangle (bounds, 8.0f);
-        g.setColour (juce::Colour::fromRGB (45, 45, 45));
-        g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
+        juce::ColourGradient bg (juce::Colour::fromRGB (31, 31, 31), b.getX(), b.getY(),
+                                 juce::Colour::fromRGB (17, 17, 17), b.getX(), b.getBottom(), false);
+        g.setGradientFill (bg);
+        g.fillRoundedRectangle (b, 8.0f);
 
-        g.setColour (juce::Colour::fromRGB (255, 140, 0));
-        g.fillRect (bounds.getX() + 15.0f, bounds.getY() + 26.0f, bounds.getWidth() - 30.0f, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.05f));
+        g.drawLine (b.getX() + 8.0f, b.getY() + 1.0f, b.getRight() - 8.0f, b.getY() + 1.0f);
+        g.setColour (juce::Colour::fromRGB (48, 48, 48));
+        g.drawRoundedRectangle (b.reduced (0.5f), 8.0f, 1.0f);
+
+        const float ly = b.getY() + 26.0f;
+        juce::ColourGradient line (kOrange, b.getX() + 15.0f, ly,
+                                   kOrange.withAlpha (0.0f), b.getRight() - 15.0f, ly, false);
+        g.setGradientFill (line);
+        g.fillRect (b.getX() + 15.0f, ly, b.getWidth() - 30.0f, 1.0f);
 
         g.setColour (juce::Colour::fromRGB (255, 165, 30));
         g.setFont (juce::Font (10.5f, juce::Font::bold));
-        g.drawText (title, (int)bounds.getX() + 15, (int)bounds.getY() + 8, 300, 16, juce::Justification::left);
+        g.drawText (title, juce::Rectangle<float> (b.getX() + 15.0f, b.getY() + 7.0f, 320.0f, 16.0f),
+                    juce::Justification::left);
     };
 
-    drawPanel ({15.0f, 75.0f, 390.0f, 240.0f}, "ETAPA DE SATURACIÓN");
-    drawPanel ({415.0f, 75.0f, 410.0f, 240.0f}, "ECUALIZACIÓN & DE-HARSH");
-    drawPanel ({15.0f, 325.0f, 810.0f, 170.0f}, "TOPOLOGÍA & CONTROL DE SALIDA");
-
-    g.setColour (juce::Colour::fromRGB (12, 12, 12));
-    g.fillRoundedRectangle (670.0f, 350.0f, 130.0f, 105.0f, 6.0f);
-    g.setColour (juce::Colour::fromRGB (40, 40, 40));
-    g.drawRoundedRectangle (670.0f, 350.0f, 130.0f, 105.0f, 6.0f, 1.0f);
-
-    g.setColour (juce::Colour::fromRGB (150, 150, 150));
-    g.setFont (9.5f);
-    g.drawText ("OUTPUT METER", 670, 355, 130, 15, juce::Justification::centred);
-
-    for (int i = 0; i < 10; ++i)
-    {
-        auto barColor = (i < 7) ? juce::Colour::fromRGB (255, 140, 0) : juce::Colour::fromRGB (220, 50, 50);
-        g.setColour (barColor);
-        g.fillRect (685.0f + (i * 11.0f), 380.0f, 8.0f, 18.0f);
-    }
+    drawPanel ({  15.0f,  75.0f, 390.0f, 240.0f }, U ("ETAPA DE SATURACIÓN"));
+    drawPanel ({ 415.0f,  75.0f, 410.0f, 240.0f }, U ("ECUALIZACIÓN & DE-HARSH"));
+    drawPanel ({  15.0f, 325.0f, 810.0f, 170.0f }, U ("TOPOLOGÍA & CONTROL DE SALIDA"));
 }
 
+//==============================================================================
 void ScarlettWarmthAudioProcessorEditor::resized()
 {
-    driveSlider.setBounds (30, 120, 80, 80);
-    driveLabel.setBounds  (30, 210, 80, 20);
+    // Perilla + valor + nombre, centrados en cx
+    auto place = [] (Knob& k, int cx, int top, int size)
+    {
+        const int w = juce::jmax (100, size);
+        k.slider.setBounds (cx - w / 2, top, w, size + 18);
+        k.name.setBounds (cx - 60, top + size + 22, 120, 14);
+    };
 
-    ironSlider.setBounds  (130, 120, 80, 80);
-    ironLabel.setBounds   (130, 210, 80, 20);
+    // Panel de saturacion
+    place (drive, 90,  112, 104);
+    place (iron,  215, 112, 104);
+    hpfLabel.setBounds (285, 140, 110, 14);
+    hpfBox.setBounds   (285, 158, 105, 30);
 
-    hpfLabel.setBounds    (245, 130, 130, 15);
-    hpfBox.setBounds      (245, 150, 140, 30);
+    // Panel de ecualizacion (todas a la misma altura)
+    place (chest, 483, 112, 104);
+    place (anti,  620, 112, 104);
+    place (silk,  757, 112, 104);
 
-    chestSlider.setBounds (440, 120, 80, 80);
-    chestLabel.setBounds  (440, 210, 80, 20);
-
-    stridenceSlider.setBounds (555, 120, 80, 80);
-    stridenceLabel.setBounds  (555, 210, 80, 20);
-
-    silkSlider.setBounds  (670, 120, 80, 80);
-    silkLabel.setBounds   (670, 210, 80, 20);
-
-    topologyLabel.setBounds (35, 360, 180, 15);
-    topologyBox.setBounds   (35, 380, 190, 35);
-
-    outputSlider.setBounds  (345, 340, 110, 110);
-    outputLabel.setBounds   (345, 458, 110, 20);
-
-    bypassButton.setBounds  (520, 380, 110, 35);
+    // Panel inferior
+    topologyLabel.setBounds (35, 362, 190, 14);
+    topologyBox.setBounds   (35, 382, 190, 32);
+    place (trim, 420, 354, 96);
+    bypassButton.setBounds (530, 395, 120, 38);
+    meter.setBounds (670, 350, 130, 105);
 }
