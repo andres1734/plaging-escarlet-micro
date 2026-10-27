@@ -1,59 +1,49 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_dsp/juce_dsp.h>
+#include "PluginProcessor.h"
 
-class ScarlettWarmthAudioProcessor : public juce::AudioProcessor
+class ScarlettWarmthAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
-    std::atomic<float> outputLevel { 0.0f };
-    ScarlettWarmthAudioProcessor();
-    ~ScarlettWarmthAudioProcessor() override;
+    ScarlettWarmthAudioProcessorEditor (ScarlettWarmthAudioProcessor&);
+    ~ScarlettWarmthAudioProcessorEditor() override;
 
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override;
-
-   #ifndef JucePlugin_PreferredChannelConfigurations
-    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
-   #endif
-
-    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
-
-    juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override;
-
-    const juce::String getName() const override;
-
-    bool acceptsMidi() const override;
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
-    double getTailLengthSeconds() const override;
-
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram (int index) override;
-    const juce::String getProgramName (int index) override;
-    void changeProgramName (int index, const juce::String& newName) override;
-
-    void getStateInformation (juce::MemoryBlock& destData) override;
-    void setStateInformation (const void* data, int sizeInBytes) override;
-
-    // APVTS para conectar con la interfaz
-    juce::AudioProcessorValueTreeState apvts;
+    void paint (juce::Graphics&) override;
+    void resized() override;
 
 private:
-    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    ScarlettWarmthAudioProcessor& audioProcessor;
 
-    // Filtros DSP por canal (Estéreo: canal 0 y canal 1)
-    juce::dsp::IIR::Filter<float> hpfFilter[2];
-    juce::dsp::IIR::Filter<float> cm25Notch[2];
-    juce::dsp::IIR::Filter<float> warmthShelf[2];
-    juce::dsp::IIR::Filter<float> silkShelf[2];
+    // --- CONTROLES VISUALES (Los que daban error) ---
+    juce::Slider driveSlider;
+    juce::Slider iron;              // Control de Iron Core
+    
+    juce::ComboBox hpfBox;          // Menú desplegable HPF
+    juce::Label hpfLabel;           // Etiqueta del HPF
+    
+    juce::Slider chest;             // Control de Chest Warmth
+    juce::Slider anti;              // Control de CM25 De-Harsh / Anti-Stridence
+    juce::Slider silk;              // Control de Silk Air
+    
+    juce::ComboBox topologyBox;     // Menú de Topología
+    juce::Slider outputSlider;      // Output Trim
+    juce::ToggleButton bypassButton;// Botón de Bypass
 
-    double currentSampleRate = 44100.0;
+    // --- ATTACHMENTS (Para enlazar la UI con el APVTS del procesador) ---
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    // Función de saturación basada en tu script de Faust
-    float applyTriodeSaturation (float inSample, float driveVal, float ironVal);
+    std::unique_ptr<SliderAttachment> driveAttachment;
+    std::unique_ptr<SliderAttachment> ironAttachment;
+    std::unique_ptr<ComboBoxAttachment> hpfAttachment;
+    std::unique_ptr<SliderAttachment> chestAttachment;
+    std::unique_ptr<SliderAttachment> antiAttachment;
+    std::unique_ptr<SliderAttachment> silkAttachment;
+    std::unique_ptr<ComboBoxAttachment> topologyAttachment;
+    std::unique_ptr<SliderAttachment> outputAttachment;
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScarlettWarmthAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScarlettWarmthAudioProcessorEditor)
 };
