@@ -41,7 +41,11 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    using IIRFilter = juce::dsp::IIR::Filter<float>;
+    using Coefficients = juce::dsp::IIR::Coefficients<float>;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScarlettWarmthAudioProcessor)
+    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> hpfFilter;
+    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> cm25Notch;
+    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> warmthShelf;
+    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> silkShelf;
 };
