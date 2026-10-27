@@ -2,7 +2,7 @@
 #include "PluginEditor.h"
 #include <cmath>
 #include <algorithm>
-
+using namespace juce::dsp;
 ScarlettWarmthAudioProcessor::ScarlettWarmthAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
@@ -144,13 +144,12 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
 
     // Actualizar coeficientes de los filtros de forma directa
     if (currentHpfFreq > 15.0f) {
-        *hpfFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
+        *hpfFilter.state = *IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
     }
     
-    *cm25Notch.state   = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain(deHarsh));
-    *warmthShelf.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 220.0f, 2.5f, juce::Decibels::decibelsToGain(chest));
-    *silkShelf.state   = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
-
+    *cm25Notch.state   = *IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain(deHarsh));
+    *warmthShelf.state = *IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 220.0f, 2.5f, juce::Decibels::decibelsToGain(chest));
+    *silkShelf.state   = *IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
     float peak = 0.0f;
 
     // Procesamiento muestra por muestra (robusto y sin problemas de AudioBlock)
