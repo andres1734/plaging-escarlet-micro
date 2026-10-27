@@ -3,6 +3,14 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
 
+// Estructura auxiliar para agrupar perilla, nombre y attachment
+struct Knob
+{
+    juce::Slider slider;
+    juce::Label name;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attach;
+};
+
 class ScarlettWarmthAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -16,33 +24,38 @@ private:
     ScarlettWarmthAudioProcessor& audioProcessor;
 
     // --- Controles de la interfaz ---
-    juce::Slider driveSlider;
-    juce::Slider iron;
-    juce::ComboBox hpfBox;
+    Knob drive;
+    Knob iron;
+    Knob chest;
+    Knob anti;
+    Knob silk;
+    Knob trim;
+
     juce::Label hpfLabel;
-    juce::Slider chest;
-    juce::Slider anti;
-    juce::Slider silk;
+    juce::ComboBox hpfBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> hpfAttach;
+
+    juce::Label topologyLabel;
     juce::ComboBox topologyBox;
-    juce::Label topologyLabel;     // <--- Faltaba declarar
-    juce::Slider trim;             // <--- Faltaba declarar (o outputSlider según tu .cpp)
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> topologyAttach;
+
     juce::ToggleButton bypassButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach;
+
+    // Componente de Medidor de Salida (Output Meter)
+    // Nota: Si tu medidor tiene otra clase o nombre personalizado, asegúrate de que coincida aquí
     juce::Component meter; 
 
-    // --- Attachments para el APVTS ---
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    // LookAndFeel personalizados (si los usas en tu proyecto)
+    // juce::LookAndFeel_V4 knobLnF;
+    // juce::LookAndFeel_V4 comboLnF;
+    // juce::LookAndFeel_V4 switchLnF;
 
-    std::unique_ptr<SliderAttachment> driveAttachment;
-    std::unique_ptr<SliderAttachment> ironAttachment;
-    std::unique_ptr<ComboBoxAttachment> hpfAttachment;
-    std::unique_ptr<SliderAttachment> chestAttachment;
-    std::unique_ptr<SliderAttachment> antiAttachment;
-    std::unique_ptr<SliderAttachment> silkAttachment;
-    std::unique_ptr<ComboBoxAttachment> topologyAttachment;
-    std::unique_ptr<SliderAttachment> outputAttachment;
-    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    void setupKnob (Knob& k, const char* paramID, const juce::String& title, const juce::String& unit);
+    void setupCombo (juce::ComboBox& box, std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>& attach, const char* paramID);
+    void setupSmallLabel (juce::Label& l, const juce::String& text);
+
+    using APVTS = juce::AudioProcessorValueTreeState;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScarlettWarmthAudioProcessorEditor)
 };
