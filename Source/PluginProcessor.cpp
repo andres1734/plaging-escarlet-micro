@@ -45,7 +45,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout ScarlettWarmthAudioProcessor
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         "silkAir", "Silk Air", juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 4.5f, " dB"));
 
-    // Nota: Mantenemos topology por si tu UI la usa, aunque no esté en el DSP de Faust básico
     juce::StringArray topologyChoices = { "German Valve V72", "American Console", "British Class A", "Solid State Modern" };
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         "topology", "Topología de Previo", topologyChoices, 0));
@@ -146,8 +145,7 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     float hpfFreqs[] = { 10.0f, 40.0f, 80.0f, 120.0f, 160.0f, 200.0f };
     float currentHpfFreq = hpfFreqs[std::clamp(hpfChoice, 0, 5)];
 
-    // Actualizar coeficientes de filtros para cada canal
-   // Actualizar coeficientes de filtros de forma moderna
+    // Actualizar coeficientes de filtros de forma moderna
     if (currentHpfFreq > 15.0f) {
         for (int i = 0; i < getTotalNumOutputChannels(); ++i) {
             auto hpfCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
@@ -169,6 +167,44 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
         auto silkCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
         *silkShelf[i].state = *silkCoeffs;
     }
+
+    float peak = 0.0f;
+
+    // Procesamiento de audio muestra por muestra
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    {
+        auto* channelData = buffer.getWritePointer (channel);
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            float x = channelData[sample];
+            float processed = x;
+
+            if (!bypass)
+            {
+                // 1. HPF
+                if (currentHpfFreq > 15.0f)
+                    processed = hpfFilter[channel].processSample(processed);
+
+                // 2. CM25 De-Harsh Notch
+                processed = cm25Notch[channel].processSample(processed);
+
+                // 3. Chest Warmth
+                processed = warmthShelf[channel].processSample(processed);
+
+                // 4. Silk Air
+                processed = silkShelf[channel].processSample(processed);
+
+                // 5. Triode & Transformer Saturation
+                processed = applyTriodeSaturation(processed, drive, iron);
+
+                // 6. Output Trim
+                processed *= outTrim;
+            }
+
+            channelData[sample] = processed;
+            peak = juce::jmax(peak, std::abs(processed));
+        }
     }
 
     // Actualizar medidor de salida
