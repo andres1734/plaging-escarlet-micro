@@ -1,226 +1,240 @@
-#include <juce_dsp/juce_dsp.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include <cmath>
-#include <algorithm>
-using namespace juce::dsp;
-ScarlettWarmthAudioProcessor::ScarlettWarmthAudioProcessor()
-#ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       ),
-#endif
-       apvts (*this, nullptr, "Parameters", createParameterLayout())
+
+//==============================================================================
+// Saturacion triodo asimetrico + hierro de transformador (port del DSP de Faust)
+// Con compensacion: ganancia 1 para senales pequenas, asi Drive agrega color y
+// no solo volumen.
+static inline float saturate (float sig, float driveNorm, float ironNorm, float biasScale)
 {
+    const float g    = 1.0f + driveNorm * 2.2f;
+    const float in   = sig * g;
+    const float bias = 0.28f * driveNorm * biasScale;
+
+    // Semiciclo positivo (conduccion suave de rejilla)
+    const float t   = std::tanh (in);
+    const float pos = t + bias * (t * t) * 0.45f;
+
+    // Semiciclo negativo (corte suave)
+    const float a   = std::abs (in);
+    const float sn  = -a / (1.0f + a * 0.65f);
+    const float neg = sn - bias * (sn * sn) * 0.20f;
+
+    const float tube = in >= 0.0f ? pos : neg;
+
+    // Saturacion del nucleo del transformador
+    const float iron = std::tanh (in * (1.0f + ironNorm * 1.8f)) * 0.95f;
+
+    const float w = ironNorm * 0.4f;
+    const float y = tube * (1.0f - w) + iron * w;
+
+    const float smallSignalGain = g * ((1.0f - w) + w * (1.0f + ironNorm * 1.8f) * 0.95f);
+    return y / smallSignalGain;
 }
 
-ScarlettWarmthAudioProcessor::~ScarlettWarmthAudioProcessor()
-{
-}
-
+//==============================================================================
 juce::AudioProcessorValueTreeState::ParameterLayout ScarlettWarmthAudioProcessor::createParameterLayout()
 {
-    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+    using namespace juce;
+    std::vector<std::unique_ptr<RangedAudioParameter>> p;
 
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "drive", "Drive / Gain", juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 4.8f, " dB"));
+    // Los valores por defecto son los mismos que tu DSP de Faust
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "drive", 1 },         "Drive / Gain",
+                                                        NormalisableRange<float> (0.0f, 10.0f, 0.1f), 4.8f));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "iron", 1 },          "Iron Core",
+                                                        NormalisableRange<float> (0.0f, 100.0f, 1.0f), 40.0f));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "hpf", 1 },          "HPF",
+                                                         StringArray { "Off", "40 Hz", "80 Hz", "120 Hz" }, 2));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "chest", 1 },         "Chest (220Hz)",
+                                                        NormalisableRange<float> (-6.0f, 6.0f, 0.1f), 3.0f));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "antiStridence", 1 }, "Anti-Stridence",
+                                                        NormalisableRange<float> (0.0f, 8.0f, 0.1f), 3.6f));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "silkAir", 1 },       "Silk Air",
+                                                        NormalisableRange<float> (-6.0f, 6.0f, 0.1f), 1.8f));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "topology", 1 },     "Topologia",
+                                                         StringArray { "German Valve V72", "Solid State Modern" }, 0));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "outputTrim", 1 },    "Output Trim",
+                                                        NormalisableRange<float> (-12.0f, 12.0f, 0.1f), 0.0f));
+    p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { "bypass", 1 },        "Bypass", false));
 
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "ironCore", "Iron Core", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 40.0f, " %"));
-
-    juce::StringArray hpfChoices = { "Off", "40 Hz", "80 Hz", "120 Hz", "160 Hz", "200 Hz" };
-    params.push_back (std::make_unique<juce::AudioParameterChoice> (
-        "hpf", "Filtro de Graves (HPF)", hpfChoices, 2)); // Default 80Hz
-
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "chest", "Chest (220Hz)", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 5.5f, " dB"));
-
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "antiStridence", "CM25 De-Harsh", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), -3.5f, " dB"));
-
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "silkAir", "Silk Air", juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 4.5f, " dB"));
-
-    juce::StringArray topologyChoices = { "German Valve V72", "American Console", "British Class A", "Solid State Modern" };
-    params.push_back (std::make_unique<juce::AudioParameterChoice> (
-        "topology", "Topología de Previo", topologyChoices, 0));
-
-    params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "output", "Output Trim", juce::NormalisableRange<float>(-24.0f, 12.0f, 0.1f), 0.0f, " dB"));
-
-    params.push_back (std::make_unique<juce::AudioParameterBool> (
-        "bypass", "Bypass", false));
-
-    return { params.begin(), params.end() };
+    return { p.begin(), p.end() };
 }
 
-const juce::String ScarlettWarmthAudioProcessor::getName() const { return JucePlugin_Name; }
-bool ScarlettWarmthAudioProcessor::acceptsMidi() const { return false; }
-bool ScarlettWarmthAudioProcessor::producesMidi() const { return false; }
-bool ScarlettWarmthAudioProcessor::isMidiEffect() const { return false; }
-double ScarlettWarmthAudioProcessor::getTailLengthSeconds() const { return 0.0; }
-int ScarlettWarmthAudioProcessor::getNumPrograms() { return 1; }
-int ScarlettWarmthAudioProcessor::getCurrentProgram() { return 0; }
-void ScarlettWarmthAudioProcessor::setCurrentProgram (int) {}
-const juce::String ScarlettWarmthAudioProcessor::getProgramName (int) { return {}; }
-void ScarlettWarmthAudioProcessor::changeProgramName (int, const juce::String&) {}
+//==============================================================================
+ScarlettWarmthAudioProcessor::ScarlettWarmthAudioProcessor()
+    : AudioProcessor (BusesProperties()
+                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
+{
+    pDrive    = apvts.getRawParameterValue ("drive");
+    pIron     = apvts.getRawParameterValue ("iron");
+    pHpf      = apvts.getRawParameterValue ("hpf");
+    pChest    = apvts.getRawParameterValue ("chest");
+    pAnti     = apvts.getRawParameterValue ("antiStridence");
+    pSilk     = apvts.getRawParameterValue ("silkAir");
+    pTopology = apvts.getRawParameterValue ("topology");
+    pTrim     = apvts.getRawParameterValue ("outputTrim");
+    pBypass   = apvts.getRawParameterValue ("bypass");
+}
 
-void ScarlettWarmthAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+const juce::String ScarlettWarmthAudioProcessor::getName() const
+{
+    return JucePlugin_Name;
+}
+
+//==============================================================================
+void ScarlettWarmthAudioProcessor::prepareToPlay (double sampleRate, int)
 {
     currentSampleRate = sampleRate;
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = (uint32_t) samplesPerBlock;
-    spec.numChannels = (uint32_t) getTotalNumOutputChannels();
 
-    for (int i = 0; i < 2; ++i)
+    for (int ch = 0; ch < 2; ++ch)
     {
-        hpfFilter[i].prepare(spec);
-        cm25Notch[i].prepare(spec);
-        warmthShelf[i].prepare(spec);
-        silkShelf[i].prepare(spec);
+        hpf[ch].reset(); cm25[ch].reset(); warm[ch].reset(); silk[ch].reset();
+        dcX[ch] = dcY[ch] = 0.0f;
     }
+
+    dcR = 1.0f - (float) (2.0 * juce::MathConstants<double>::pi * 5.0 / sampleRate);   // corte ~5 Hz
+    lastHpf = -1;
+
+    driveSm.reset  (sampleRate, 0.03);
+    ironSm.reset   (sampleRate, 0.03);
+    trimSm.reset   (sampleRate, 0.03);
+    bypassSm.reset (sampleRate, 0.02);
+
+    driveSm.setCurrentAndTargetValue  (juce::jmax (0.05f, pDrive->load() / 10.0f));
+    ironSm.setCurrentAndTargetValue   (pIron->load() / 100.0f);
+    trimSm.setCurrentAndTargetValue   (juce::Decibels::decibelsToGain (pTrim->load()));
+    bypassSm.setCurrentAndTargetValue (pBypass->load() > 0.5f ? 1.0f : 0.0f);
+
+    updateFilters();
 }
 
-void ScarlettWarmthAudioProcessor::releaseResources() {}
-
-#ifndef JucePlugin_PreferredChannelConfigurations
 bool ScarlettWarmthAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    const auto& out = layouts.getMainOutputChannelSet();
+
+    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
         return false;
-    return layouts.getMainOutputChannelSet() == layouts.getMainInputChannelSet();
-}
-#endif
 
-float ScarlettWarmthAudioProcessor::applyTriodeSaturation (float inSample, float driveVal, float ironVal)
+    return out == layouts.getMainInputChannelSet();
+}
+
+//==============================================================================
+void ScarlettWarmthAudioProcessor::updateFilters()
 {
-    float drive_norm = std::max (0.05f, driveVal / 10.0f);
-    float iron_norm  = std::max (0.0f, ironVal / 100.0f);
-    float in_sig     = inSample * (1.0f + drive_norm * 2.2f);
-    float bias       = 0.28f * drive_norm;
+    static const double hpfFreq[] = { 0.0, 40.0, 80.0, 120.0 };
 
-    // Triode positive swing
-    float tanh_pos = std::tanh(in_sig);
-    float pos_out  = tanh_pos + bias * std::pow(tanh_pos, 2.0f) * 0.45f;
+    const int hpfIdx = juce::jlimit (0, 3, (int) std::lround (pHpf->load()));
+    hpfOn = hpfIdx > 0;
 
-    // Triode negative swing
-    float abs_s    = std::abs(in_sig);
-    float soft_neg = (-abs_s) / (1.0f + abs_s * 0.65f);
-    float neg_out  = soft_neg - bias * std::pow(soft_neg, 2.0f) * 0.20f;
+    if (hpfIdx != lastHpf)
+    {
+        for (auto& f : hpf) f.reset();
+        lastHpf = hpfIdx;
+    }
 
-    float tube_out = (in_sig >= 0.0f) ? pos_out : neg_out;
+    if (hpfOn)
+        for (auto& f : hpf) f.makeHighpass (currentSampleRate, hpfFreq[hpfIdx], 0.70710678);
 
-    // Transformer core saturation
-    float iron_out = std::tanh(in_sig * (1.0f + iron_norm * 1.8f)) * 0.95f;
+    // De-harsh del CM25: recorte a 5.8 kHz (Q = 5800 / 4200 Hz de ancho)
+    for (auto& f : cm25) f.makePeak (currentSampleRate, 5800.0, 5800.0 / 4200.0, -(double) pAnti->load());
 
-    return tube_out * (1.0f - iron_norm * 0.4f) + iron_out * (iron_norm * 0.4f);
+    // Chest a 220 Hz (Q = 220 / 250 Hz de ancho)
+    for (auto& f : warm) f.makePeak (currentSampleRate, 220.0, 220.0 / 250.0, (double) pChest->load());
+
+    // Silk Air: shelf alto a 12.5 kHz
+    for (auto& f : silk) f.makeHighShelf (currentSampleRate, 12500.0, (double) pSilk->load());
 }
 
+//==============================================================================
 void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    const int totalIn  = getTotalNumInputChannels();
+    const int totalOut = getTotalNumOutputChannels();
+    const int n        = buffer.getNumSamples();
 
-    // Leer parámetros del APVTS
-    bool bypass      = apvts.getRawParameterValue("bypass")->load() > 0.5f;
-    float drive      = apvts.getRawParameterValue("drive")->load();
-    float iron       = apvts.getRawParameterValue("ironCore")->load();
-    int hpfChoice    = (int) apvts.getRawParameterValue("hpf")->load();
-    float chest      = apvts.getRawParameterValue("chest")->load();
-    float deHarsh    = apvts.getRawParameterValue("antiStridence")->load();
-    float silk       = apvts.getRawParameterValue("silkAir")->load();
-    float outTrim    = juce::Decibels::decibelsToGain(apvts.getRawParameterValue("output")->load());
+    for (int i = totalIn; i < totalOut; ++i)
+        buffer.clear (i, 0, n);
 
-    // Calcular frecuencias del HPF según el menú desplegable
-    float hpfFreqs[] = { 10.0f, 40.0f, 80.0f, 120.0f, 160.0f, 200.0f };
-    float currentHpfFreq = hpfFreqs[std::clamp(hpfChoice, 0, 5)];
+    const int numCh = juce::jmin (buffer.getNumChannels(), 2);
 
-    // Generar coeficientes para el bloque actual
-    auto hpfCoeffs   = juce::dsp::IIR::Coefficients<float>::makeHighPass  (currentSampleRate, currentHpfFreq);
-    auto notchCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain (deHarsh));
-    auto warmthCoeffs= juce::dsp::IIR::Coefficients<float>::makePeakFilter  (currentSampleRate,  220.0f, 2.5f, juce::Decibels::decibelsToGain (chest));
-    auto silkCoeffs  = juce::dsp::IIR::Coefficients<float>::makeHighShelf (currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain (silk));
-
-    // Actualizar coeficientes en ambos canales
-    for (int i = 0; i < 2; ++i)
+    if (numCh > 0 && n > 0)
     {
-        if (currentHpfFreq > 15.0f)
-            hpfFilter[i].coefficients = hpfCoeffs;
+        const bool  valve     = pTopology->load() < 0.5f;       // German Valve V72 = triodo completo
+        const float biasScale = valve ? 1.0f : 0.25f;           // Solid State: menos asimetria
+        const float ironScale = valve ? 1.0f : 0.5f;            // y menos hierro
 
-        cm25Notch[i].coefficients   = notchCoeffs;
-        warmthShelf[i].coefficients = warmthCoeffs;
-        silkShelf[i].coefficients   = silkCoeffs;
-    }
+        driveSm.setTargetValue  (juce::jmax (0.05f, pDrive->load() / 10.0f));
+        ironSm.setTargetValue   ((pIron->load() / 100.0f) * ironScale);
+        trimSm.setTargetValue   (juce::Decibels::decibelsToGain (pTrim->load()));
+        bypassSm.setTargetValue (pBypass->load() > 0.5f ? 1.0f : 0.0f);
 
-    float peak = 0.0f;
+        updateFilters();
 
-    // Procesamiento muestra por muestra por canal
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
+        float* data[2] = { buffer.getWritePointer (0), numCh > 1 ? buffer.getWritePointer (1) : nullptr };
 
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        for (int i = 0; i < n; ++i)
         {
-            float x = channelData[sample];
+            const float dn = driveSm.getNextValue();
+            const float ir = ironSm.getNextValue();
+            const float tg = trimSm.getNextValue();
+            const float bp = bypassSm.getNextValue();
 
-            if (!bypass)
+            for (int ch = 0; ch < numCh; ++ch)
             {
-                // 1. HPF
-                if (currentHpfFreq > 15.0f)
-                    x = hpfFilter[channel].processSample (x);
+                const float dry = data[ch][i];
+                float x = dry;
 
-                // 2. CM25 De-Harsh Notch
-                x = cm25Notch[channel].processSample (x);
+                if (hpfOn) x = hpf[ch].process (x);
+                x = cm25[ch].process (x);
+                x = warm[ch].process (x);
+                x = silk[ch].process (x);
 
-                // 3. Chest Warmth
-                x = warmthShelf[channel].processSample (x);
+                x = saturate (x, dn, ir, biasScale);
 
-                // 4. Silk Air
-                x = silkShelf[channel].processSample (x);
+                // Bloqueo de DC (la saturacion asimetrica genera un poco)
+                const float y = x - dcX[ch] + dcR * dcY[ch];
+                dcX[ch] = x;
+                dcY[ch] = y;
 
-                // 5. Triode & Transformer Saturation
-                x = applyTriodeSaturation (x, drive, iron);
-
-                // 6. Output Trim
-                x *= outTrim;
+                data[ch][i] = dry * bp + (y * tg) * (1.0f - bp);
             }
-
-            channelData[sample] = x;
-            peak = juce::jmax (peak, std::abs (x));
         }
     }
 
-    // Actualizar medidor de salida
+    // Medidor de salida
+    float peak = 0.0f;
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, n));
+
     outputLevel.store (juce::jmap (juce::Decibels::gainToDecibels (peak, -60.0f), -60.0f, 0.0f, 0.0f, 1.0f));
 }
 
-bool ScarlettWarmthAudioProcessor::hasEditor() const { return true; }
-juce::AudioProcessorEditor* ScarlettWarmthAudioProcessor::createEditor() { return new ScarlettWarmthAudioProcessorEditor (*this); }
+//==============================================================================
+juce::AudioProcessorEditor* ScarlettWarmthAudioProcessor::createEditor()
+{
+    return new ScarlettWarmthAudioProcessorEditor (*this);
+}
 
 void ScarlettWarmthAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    auto xml = apvts.copyState().createXml();
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
 }
 
 void ScarlettWarmthAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-    if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
-        apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
+
+    if (xml != nullptr && xml->hasTagName (apvts.state.getType()))
+        apvts.replaceState (juce::ValueTree::fromXml (*xml));
 }
 
+//==============================================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new ScarlettWarmthAudioProcessor();
