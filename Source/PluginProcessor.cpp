@@ -147,58 +147,28 @@ void ScarlettWarmthAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     float currentHpfFreq = hpfFreqs[std::clamp(hpfChoice, 0, 5)];
 
     // Actualizar coeficientes de filtros para cada canal
+   // Actualizar coeficientes de filtros de forma moderna
     if (currentHpfFreq > 15.0f) {
-        for (int i = 0; i < getTotalNumOutputChannels(); ++i)
-            *hpfFilter[i].coefficients = *juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
+        for (int i = 0; i < getTotalNumOutputChannels(); ++i) {
+            auto hpfCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, currentHpfFreq);
+            *hpfFilter[i].state = *hpfCoeffs;
+        }
     }
 
     for (int i = 0; i < getTotalNumOutputChannels(); ++i)
     {
         // CM25 De-Harsh Notch (5.8 kHz)
-        *cm25Notch[i].coefficients = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain(deHarsh));
+        auto notchCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 5800.0f, 4.2f, juce::Decibels::decibelsToGain(deHarsh));
+        *cm25Notch[i].state = *notchCoeffs;
+
         // Chest Warmth Peak (220 Hz)
-        *warmthShelf[i].coefficients = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 220.0f, 2.5f, juce::Decibels::decibelsToGain(chest));
+        auto warmthCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 220.0f, 2.5f, juce::Decibels::decibelsToGain(chest));
+        *warmthShelf[i].state = *warmthCoeffs;
+
         // Silk Air High Shelf (12.5 kHz)
-        *silkShelf[i].coefficients = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
+        auto silkCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 12500.0f, 0.707f, juce::Decibels::decibelsToGain(silk));
+        *silkShelf[i].state = *silkCoeffs;
     }
-
-    float peak = 0.0f;
-
-    // Procesamiento de audio muestra por muestra
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
-
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        {
-            float x = channelData[sample];
-            float processed = x;
-
-            if (!bypass)
-            {
-                // 1. HPF
-                if (currentHpfFreq > 15.0f)
-                    processed = hpfFilter[channel].processSample(processed);
-
-                // 2. CM25 De-Harsh Notch
-                processed = cm25Notch[channel].processSample(processed);
-
-                // 3. Chest Warmth
-                processed = warmthShelf[channel].processSample(processed);
-
-                // 4. Silk Air
-                processed = silkShelf[channel].processSample(processed);
-
-                // 5. Triode & Transformer Saturation
-                processed = applyTriodeSaturation(processed, drive, iron);
-
-                // 6. Output Trim
-                processed *= outTrim;
-            }
-
-            channelData[sample] = processed;
-            peak = juce::jmax(peak, std::abs(processed));
-        }
     }
 
     // Actualizar medidor de salida
