@@ -4,21 +4,22 @@
 ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (ScarlettWarmthAudioProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
-    // Tamaño de la ventana del plugin (estilo rack hardware)
+    // Tamaño de la ventana del plugin
     setSize (780, 440);
 
-    // Configuración de perillas giratorias (Rotary Knobs) con estilo analógico
+    // Configuración de perillas giratorias (Rotary Knobs) con estilo analógico y decimales limpios
     auto setupRotarySlider = [this](juce::Slider& slider, juce::Label& label, const juce::String& text)
     {
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 65, 20);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 60, 18);
+        slider.setNumDecimalPlacesToDisplay (1); // Limita los decimales a uno (ej: 0.0 en vez de 0.0000000)
         slider.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB (255, 140, 0)); // Naranja cálido
         slider.setColour (juce::Slider::thumbColourId, juce::Colour::fromRGB (255, 200, 100));
         addAndMakeVisible (slider);
 
         label.setText (text, juce::dontSendNotification);
         label.setJustificationType (juce::Justification::centred);
-        label.setFont (juce::Font(11.0f, juce::Font::bold));
+        label.setFont (juce::Font(10.0f, juce::Font::bold));
         label.setColour (juce::Label::textColourId, juce::Colour::fromRGB (200, 200, 200));
         addAndMakeVisible (label);
     };
@@ -63,13 +64,13 @@ void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
     // Fondo general gris oscuro / negro mate estilo consola
     g.fillAll (juce::Colour::fromRGB (20, 20, 20));
 
-    // Cabecera superior
+    // Cabecera superior corregida (sin caracteres extraños)
     g.setColour (juce::Colour::fromRGB (35, 35, 35));
     g.fillRoundedRectangle (15, 15, 750, 45, 6);
 
     g.setColour (juce::Colour::fromRGB (255, 140, 0));
-    g.setFont (juce::Font (15.0f, juce::Font::bold));
-    g.drawText ("FOCUSRITE CM25 MKIII • WARMTH PREAMP", 25, 27, 450, 20, juce::Justification::left);
+    g.setFont (juce::Font (14.0f, juce::Font::bold));
+    g.drawText ("FOCUSRITE CM25 MKIII - WARMTH PREAMP", 25, 27, 450, 20, juce::Justification::left);
 
     // Paneles de secciones
     auto drawPanel = [&](juce::Rectangle<float> bounds, const juce::String& title)
@@ -91,26 +92,29 @@ void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
 
 void ScarlettWarmthAudioProcessorEditor::resized()
 {
-    driveSlider.setBounds (30, 110, 90, 100);
-    driveLabel.setBounds  (30, 215, 90, 20);
+    // Sección de Saturación (Ajustada para que la etiqueta y caja de texto no choquen)
+    driveSlider.setBounds (30, 105, 85, 75);
+    driveLabel.setBounds  (30, 195, 85, 20);
 
-    ironSlider.setBounds  (135, 110, 90, 100);
-    ironLabel.setBounds   (135, 215, 90, 20);
+    ironSlider.setBounds  (130, 105, 85, 75);
+    ironLabel.setBounds   (130, 195, 85, 20);
 
-    hpfBox.setBounds      (245, 130, 105, 30);
+    hpfBox.setBounds      (235, 125, 115, 30);
 
-    chestSlider.setBounds (405, 110, 90, 100);
-    chestLabel.setBounds  (405, 215, 90, 20);
+    // Sección de Ecualización
+    chestSlider.setBounds (400, 105, 85, 75);
+    chestLabel.setBounds  (400, 195, 85, 20);
 
-    stridenceSlider.setBounds (510, 110, 90, 100);
-    stridenceLabel.setBounds  (510, 215, 90, 20);
+    stridenceSlider.setBounds (505, 105, 85, 75);
+    stridenceLabel.setBounds  (505, 195, 85, 20);
 
-    silkSlider.setBounds  (615, 110, 90, 100);
-    silkLabel.setBounds   (615, 215, 90, 20);
+    silkSlider.setBounds  (610, 105, 85, 75);
+    silkLabel.setBounds   (610, 195, 85, 20);
 
+    // Sección Inferior (Topología y Salida ordenadas sin solapamiento)
     topologyBox.setBounds (30, 345, 180, 35);
-    outputSlider.setBounds(240, 325, 90, 90);
-    outputLabel.setBounds (240, 395, 90, 20);
+    outputSlider.setBounds(240, 320, 85, 75);
+    outputLabel.setBounds (240, 400, 85, 20);
 
     bypassButton.setBounds(640, 345, 100, 35);
 }
