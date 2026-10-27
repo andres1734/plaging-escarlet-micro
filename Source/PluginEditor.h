@@ -24,8 +24,10 @@ private:
     juce::Slider anti;
     juce::Slider silk;
     juce::ComboBox topologyBox;
-    juce::Slider outputSlider;
+    juce::Label topologyLabel;     // <--- Faltaba declarar
+    juce::Slider trim;             // <--- Faltaba declarar (o outputSlider según tu .cpp)
     juce::ToggleButton bypassButton;
+    juce::Component meter; 
 
     // --- Attachments para el APVTS ---
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
