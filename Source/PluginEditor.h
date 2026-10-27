@@ -22,6 +22,10 @@ public:
 
 private:
     ScarlettWarmthAudioProcessor& audioProcessor;
+    // LookAndFeel personalizados para evitar el error C2065
+    juce::LookAndFeel_V4 knobLnF;
+    juce::LookAndFeel_V4 comboLnF;
+    juce::LookAndFeel_V4 switchLnF;
 
     // --- Controles de la interfaz ---
     Knob drive;
