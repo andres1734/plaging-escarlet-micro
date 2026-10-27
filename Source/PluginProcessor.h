@@ -5,6 +5,7 @@
 class ScarlettWarmthAudioProcessor : public juce::AudioProcessor
 {
 public:
+    std::atomic<float> outputLevel { 0.0f };
     ScarlettWarmthAudioProcessor();
     ~ScarlettWarmthAudioProcessor() override;
 
