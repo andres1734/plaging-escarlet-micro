@@ -2,7 +2,7 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-// IDs de parametros: cambialos si los tuyos son distintos
+// IDs de parametros (deben coincidir con createParameterLayout en PluginProcessor.cpp)
 namespace ID
 {
     constexpr const char* drive    = "drive";
@@ -18,19 +18,19 @@ namespace ID
 
 static const juce::Colour kOrange = juce::Colour::fromRGB (255, 140, 0);
 
-// Texto con tildes: siempre se lee como UTF-8 (arregla "ÃÓN")
+// Texto con tildes: siempre se lee como UTF-8
 static juce::String U (const char* utf8) { return juce::String::fromUTF8 (utf8); }
 
 //==============================================================================
 ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (ScarlettWarmthAudioProcessor& p)
     : juce::AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setupKnob (drive, ID::drive, "DRIVE / GAIN",    " dB");
-    setupKnob (iron,  ID::iron,  "IRON CORE",       " %");
-    setupKnob (chest, ID::chest, "CHEST (220Hz)",   " dB");
-    setupKnob (anti,  ID::anti,  "ANTI-STRIDENCE",  " dB");
-    setupKnob (silk,  ID::silk,  "SILK AIR",        " dB");
-    setupKnob (trim,  ID::trim,  "OUTPUT TRIM",     " dB");
+    setupKnob (drive, ID::drive, "DRIVE / GAIN",   " dB", 1);
+    setupKnob (iron,  ID::iron,  "IRON CORE",      " %",  0);
+    setupKnob (chest, ID::chest, "CHEST (220Hz)",  " dB", 1);
+    setupKnob (anti,  ID::anti,  "ANTI-STRIDENCE", " dB", 1);
+    setupKnob (silk,  ID::silk,  "SILK AIR",       " dB", 1);
+    setupKnob (trim,  ID::trim,  "OUTPUT TRIM",    " dB", 1);
 
     setupSmallLabel (hpfLabel,      U ("FILTRO DE GRAVES (HPF)"));
     setupSmallLabel (topologyLabel, U ("TOPOLOGÍA DE PREVIO"));
@@ -40,8 +40,7 @@ ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (Scarlett
 
     bypassButton.setLookAndFeel (&switchLnF);
     addAndMakeVisible (bypassButton);
-    if (audioProcessor.apvts.getParameter (ID::bypass) != nullptr)
-        bypassAttach = std::make_unique<APVTS::ButtonAttachment> (audioProcessor.apvts, ID::bypass, bypassButton);
+    bypassAttach = std::make_unique<APVTS::ButtonAttachment> (audioProcessor.apvts, ID::bypass, bypassButton);
 
     addAndMakeVisible (meter);
 
@@ -60,7 +59,8 @@ ScarlettWarmthAudioProcessorEditor::~ScarlettWarmthAudioProcessorEditor()
 
 //==============================================================================
 void ScarlettWarmthAudioProcessorEditor::setupKnob (Knob& k, const char* paramID,
-                                                    const juce::String& title, const juce::String& unit)
+                                                    const juce::String& title,
+                                                    const juce::String& unit, int decimals)
 {
     k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     k.slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.2f,
@@ -72,19 +72,15 @@ void ScarlettWarmthAudioProcessorEditor::setupKnob (Knob& k, const char* paramID
     k.slider.setColour (juce::Slider::textBoxOutlineColourId,    juce::Colours::transparentBlack);
     addAndMakeVisible (k.slider);
 
-    if (audioProcessor.apvts.getParameter (paramID) != nullptr)
-    {
-        k.attach = std::make_unique<APVTS::SliderAttachment> (audioProcessor.apvts, paramID, k.slider);
+    k.attach = std::make_unique<APVTS::SliderAttachment> (audioProcessor.apvts, paramID, k.slider);
 
-        // Si el texto del parametro no trae unidad, se la agrega
-        auto base = k.slider.textFromValueFunction;
-        k.slider.textFromValueFunction = [base, unit] (double v)
-        {
-            auto t = base ? base (v) : juce::String (v, 1);
-            return t.endsWithIgnoreCase (unit.trim()) ? t : t + unit;
-        };
-        k.slider.updateText();
-    }
+    // Texto limpio y fijo: decimales controlados + unidad (se pone DESPUES del attachment)
+    k.slider.textFromValueFunction = [unit, decimals] (double v)
+    {
+        return juce::String (v, decimals) + unit;
+    };
+    k.slider.valueFromTextFunction = [] (const juce::String& t) { return t.getDoubleValue(); };
+    k.slider.updateText();
 
     k.name.setText (title, juce::dontSendNotification);
     k.name.setFont (juce::Font (10.0f, juce::Font::bold));
@@ -97,17 +93,14 @@ void ScarlettWarmthAudioProcessorEditor::setupCombo (juce::ComboBox& box,
                                                      std::unique_ptr<APVTS::ComboBoxAttachment>& attach,
                                                      const char* paramID)
 {
-    auto* param = audioProcessor.apvts.getParameter (paramID);
-
-    // Toma los items directamente del parametro (no hay que adivinar la lista)
-    if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (param))
+    // Los items salen directamente del parametro
+    if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (audioProcessor.apvts.getParameter (paramID)))
         box.addItemList (choice->choices, 1);
 
     box.setLookAndFeel (&comboLnF);
     addAndMakeVisible (box);
 
-    if (param != nullptr)
-        attach = std::make_unique<APVTS::ComboBoxAttachment> (audioProcessor.apvts, paramID, box);
+    attach = std::make_unique<APVTS::ComboBoxAttachment> (audioProcessor.apvts, paramID, box);
 }
 
 void ScarlettWarmthAudioProcessorEditor::setupSmallLabel (juce::Label& l, const juce::String& text)
