@@ -26,39 +26,39 @@ juce::AudioProcessorValueTreeState::ParameterLayout ScarlettWarmthAudioProcessor
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    // 1. Etapa de Saturación - Drive / Gain (0 a 24 dB)
+    // 1. Drive / Gain
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "drive", "Drive / Gain", juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 0.0f));
+        "drive", "Drive / Gain", juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 0.0f, " dB"));
 
-    // 2. Iron Core (0 a 100 %)
+    // 2. Iron Core (Añadido " %" para que muestre 0.0 %)
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "ironCore", "Iron Core", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f));
+        "ironCore", "Iron Core", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f, " %"));
 
-    // 3. Filtro de Graves (HPF) - Menú desplegable
+    // 3. Filtro de Graves (HPF)
     juce::StringArray hpfChoices = { "Off", "40 Hz", "80 Hz", "120 Hz", "160 Hz", "200 Hz" };
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         "hpf", "Filtro de Graves (HPF)", hpfChoices, 0));
 
-    // 4. Chest (220Hz) (-12 a 12 dB)
+    // 4. Chest (220Hz)
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "chest", "Chest (220Hz)", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+        "chest", "Chest (220Hz)", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f, " dB"));
 
-    // 5. Anti-Stridence (-12 a 12 dB)
+    // 5. Anti-Stridence
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "antiStridence", "Anti-Stridence", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+        "antiStridence", "Anti-Stridence", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f, " dB"));
 
-    // 6. Silk Air (0 a 12 dB)
+    // 6. Silk Air
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "silkAir", "Silk Air", juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 0.0f));
+        "silkAir", "Silk Air", juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 0.0f, " dB"));
 
-    // 7. Topología de Previo - Menú desplegable
+    // 7. Topología de Previo
     juce::StringArray topologyChoices = { "German Valve V72", "American Console", "British Class A", "Solid State Modern" };
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         "topology", "Topología de Previo", topologyChoices, 0));
 
-    // 8. Output Trim (-24 a 12 dB)
+    // 8. Output Trim (Añadido " dB" para que muestre 0.0 dB)
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        "output", "Output Trim", juce::NormalisableRange<float>(-24.0f, 12.0f, 0.1f), 0.0f));
+        "output", "Output Trim", juce::NormalisableRange<float>(-24.0f, 12.0f, 0.1f), 0.0f, " dB"));
 
     return { params.begin(), params.end() };
 }
