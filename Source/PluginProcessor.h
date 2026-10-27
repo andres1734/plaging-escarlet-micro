@@ -43,11 +43,11 @@ public:
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    // Filtros DSP con ProcessorDuplicator
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> hpfFilter;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> cm25Notch;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> warmthShelf;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> silkShelf;
+    // Filtros IIR directos por canal (Estéreo: 0 = Izquierda, 1 = Derecha)
+    juce::dsp::IIR::Filter<float> hpfFilter[2];
+    juce::dsp::IIR::Filter<float> cm25Notch[2];
+    juce::dsp::IIR::Filter<float> warmthShelf[2];
+    juce::dsp::IIR::Filter<float> silkShelf[2];
 
     double currentSampleRate = 44100.0;
     float applyTriodeSaturation (float inSample, float driveVal, float ironVal);
