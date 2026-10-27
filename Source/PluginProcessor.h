@@ -41,11 +41,16 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    using IIRFilter = juce::dsp::IIR::Filter<float>;
-    using Coefficients = juce::dsp::IIR::Coefficients<float>;
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> hpfFilter;
-    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> cm25Notch;
-    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> warmthShelf;
-    juce::dsp::ProcessorDuplicator<IIRFilter, Coefficients> silkShelf;
+    // Filtros DSP con ProcessorDuplicator
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> hpfFilter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> cm25Notch;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> warmthShelf;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> silkShelf;
+
+    double currentSampleRate = 44100.0;
+    float applyTriodeSaturation (float inSample, float driveVal, float ironVal);
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScarlettWarmthAudioProcessor)
 };
