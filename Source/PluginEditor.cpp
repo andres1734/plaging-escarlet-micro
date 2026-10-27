@@ -1,25 +1,64 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+//==============================================================================
+// Clase personalizada para dibujar perillas analógicas reales con indicador de posición
+class AnalogKnobLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                           float sliderPosProportional, float rotaryStartAngle,
+                           float rotaryEndAngle, juce::Slider& slider) override
+    {
+        auto bounds = juce::Rectangle<float> (x, y, width, height).reduced (4.0f);
+        auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f;
+        auto center = bounds.getCentre();
+        auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+
+        // 1. Cuerpo de la perilla (Fondo circular oscuro con relieve metálico sutil)
+        g.setColour (juce::Colour::fromRGB (24, 24, 24));
+        g.fillEllipse (center.x - radius, center.y - radius, radius * 2.0f, radius * 2.0f);
+
+        g.setColour (juce::Colour::fromRGB (55, 55, 55));
+        g.drawEllipse (center.x - radius, center.y - radius, radius * 2.0f, radius * 2.0f, 2.0f);
+
+        // 2. Anillo interior decorativo
+        g.setColour (juce::Colour::fromRGB (35, 35, 35));
+        g.drawEllipse (center.x - (radius * 0.75f), center.y - (radius * 0.75f), radius * 1.5f, radius * 1.5f, 1.0f);
+
+        // 3. Puntero / Línea indicadora analógica (Gira con el valor)
+        juce::Path pointer;
+        auto pointerLength = radius * 0.65f;
+        auto pointerThickness = 2.5f;
+        pointer.addRectangle (-pointerThickness * 0.5f, -radius + 5.0f, pointerThickness, pointerLength);
+        pointer.applyTransform (juce::AffineTransform::rotation (angle).translated (center.x, center.y));
+
+        g.setColour (juce::Colour::fromRGB (255, 140, 0)); // Naranja brillante estilo hardware
+        g.fillPath (pointer);
+    }
+};
+
+// Instancia global del diseño de perillas para el editor
+static AnalogKnobLookAndFeel analogKnobLF;
+
+//==============================================================================
 ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (ScarlettWarmthAudioProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
-    // Tamaño de la ventana del plugin
     setSize (780, 440);
 
-    // Configuración avanzada de perillas para eliminar el recuadro blanco y darle estilo pro
     auto setupRotarySlider = [this](juce::Slider& slider, juce::Label& label, const juce::String& text)
     {
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 55, 18);
         slider.setNumDecimalPlacesToDisplay (1);
         
-        // Estilo de colores profesionales (Adiós al fondo blanco)
-        slider.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB (255, 140, 0)); // Naranja ámbar
-        slider.setColour (juce::Slider::thumbColourId, juce::Colour::fromRGB (255, 200, 100));
-        slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour::fromRGB (255, 160, 50));     // Número naranja
-        slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (12, 12, 12)); // Fondo oscuro
-        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour::fromRGB (45, 45, 45));   // Borde sutil
+        // Asignar el estilo de perilla analógica personalizada
+        slider.setLookAndFeel (&analogKnobLF);
+
+        slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour::fromRGB (255, 160, 50));
+        slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (12, 12, 12));
+        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour::fromRGB (45, 45, 45));
         addAndMakeVisible (slider);
 
         label.setText (text, juce::dontSendNotification);
@@ -29,7 +68,6 @@ ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (Scarlett
         addAndMakeVisible (label);
     };
 
-    // Inicializar controles
     setupRotarySlider (driveSlider, driveLabel, "DRIVE");
     setupRotarySlider (ironSlider, ironLabel, "IRON / CORE");
     setupRotarySlider (chestSlider, chestLabel, "CHEST (220Hz)");
@@ -37,7 +75,7 @@ ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (Scarlett
     setupRotarySlider (silkSlider, silkLabel, "SILK AIR");
     setupRotarySlider (outputSlider, outputLabel, "OUTPUT TRIM");
 
-    // Menú de Filtro de Graves (HPF)
+    // Menús y Botones
     hpfBox.addItem ("Flat", 1);
     hpfBox.addItem ("40 Hz", 2);
     hpfBox.addItem ("80 Hz", 3);
@@ -48,7 +86,6 @@ ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (Scarlett
     hpfBox.setColour (juce::ComboBox::arrowColourId, juce::Colour::fromRGB (255, 140, 0));
     addAndMakeVisible (hpfBox);
 
-    // Menú de Topología de Previo
     topologyBox.addItem ("German Valve V72", 1);
     topologyBox.addItem ("Tube 610", 2);
     topologyBox.addItem ("British 1073", 3);
@@ -59,7 +96,6 @@ ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (Scarlett
     topologyBox.setColour (juce::ComboBox::arrowColourId, juce::Colour::fromRGB (255, 140, 0));
     addAndMakeVisible (topologyBox);
 
-    // Botón Bypass estilo hardware
     bypassButton.setButtonText ("BYPASS");
     bypassButton.setColour (juce::ToggleButton::tickColourId, juce::Colour::fromRGB (255, 140, 0));
     bypassButton.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour::fromRGB (40, 40, 40));
@@ -69,18 +105,22 @@ ScarlettWarmthAudioProcessorEditor::ScarlettWarmthAudioProcessorEditor (Scarlett
 
 ScarlettWarmthAudioProcessorEditor::~ScarlettWarmthAudioProcessorEditor()
 {
+    // Limpiar LookAndFeel para evitar fugas de memoria al cerrar
+    driveSlider.setLookAndFeel (nullptr);
+    ironSlider.setLookAndFeel (nullptr);
+    chestSlider.setLookAndFeel (nullptr);
+    stridenceSlider.setLookAndFeel (nullptr);
+    silkSlider.setLookAndFeel (nullptr);
+    outputSlider.setLookAndFeel (nullptr);
 }
 
 void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // Fondo general gris oscuro con textura de chasis de estudio
     g.fillAll (juce::Colour::fromRGB (18, 18, 18));
 
-    // Marco exterior simulando un rack físico de estudio
     g.setColour (juce::Colour::fromRGB (30, 30, 30));
     g.drawRect (getLocalBounds(), 2);
 
-    // Cabecera superior elegante
     g.setColour (juce::Colour::fromRGB (25, 25, 25));
     g.fillRoundedRectangle (15, 15, 750, 42, 4);
     g.setColour (juce::Colour::fromRGB (45, 45, 45));
@@ -90,7 +130,6 @@ void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (juce::Font (13.0f, juce::Font::bold));
     g.drawText ("FOCUSRITE CM25 MKIII  |  WARMTH PREAMP ANALOG STAGE", 30, 26, 500, 20, juce::Justification::left);
 
-    // Paneles de secciones estilo hardware modular
     auto drawPanel = [&](juce::Rectangle<float> bounds, const juce::String& title)
     {
         g.setColour (juce::Colour::fromRGB (22, 22, 22));
@@ -98,7 +137,6 @@ void ScarlettWarmthAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (juce::Colour::fromRGB (42, 42, 42));
         g.drawRoundedRectangle (bounds, 6, 1.0f);
 
-        // Pequeña línea decorativa de sección
         g.setColour (juce::Colour::fromRGB (255, 140, 0));
         g.fillRect (bounds.getX() + 15, bounds.getY() + 26, bounds.getWidth() - 30, 1.0f);
 
